@@ -1,8 +1,19 @@
 import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
-import { getScenario } from '../scenarios';
+import {
+  ConformanceCheck,
+  ScenarioSource,
+  SpecVersion,
+  LATEST_SPEC_VERSION,
+  DRAFT_PROTOCOL_VERSION
+} from '../types';
+import { getScenario, isScenarioApplicableAt } from '../scenarios';
+import { createServerFor, type ScenarioContext } from '../mock-server';
+import {
+  resetWireValidation,
+  wireSchemaChecks
+} from '../validation/wire-schema';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 export interface ClientExecutionResult {
@@ -17,7 +28,8 @@ async function executeClient(
   scenarioName: string,
   serverUrl: string,
   timeout: number = 30000,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
+  specVersion?: SpecVersion
 ): Promise<ClientExecutionResult> {
   const commandParts = command.split(' ');
   const executable = commandParts[0];
@@ -34,6 +46,7 @@ async function executeClient(
   // 3. Semantic separation: scenario identifies "which test", context provides "test data"
   const env = { ...process.env };
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
+  env.MCP_CONFORMANCE_PROTOCOL_VERSION = specVersion ?? LATEST_SPEC_VERSION;
   if (context) {
     // Include scenario name in context for discriminated union parsing
     env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
@@ -88,16 +101,64 @@ async function executeClient(
   });
 }
 
+// An explicitly-requested spec version outside the scenario's applicability
+// window is a contradiction: running anyway would test something other than
+// what the flag claims. Skip (exit 0) unless --force.
+function shouldSkipForSpecVersion(
+  source: ScenarioSource,
+  scenarioName: string,
+  specVersion: SpecVersion | undefined,
+  force: boolean
+): boolean {
+  if (
+    specVersion === undefined ||
+    force ||
+    isScenarioApplicableAt(source, specVersion)
+  ) {
+    return false;
+  }
+  const introduced =
+    'introducedIn' in source
+      ? `introduced in ${source.introducedIn}` +
+        (source.removedIn !== undefined
+          ? `, removed in ${source.removedIn}`
+          : '')
+      : 'extension scenario, not on the spec timeline';
+  console.log(
+    `SKIPPED: scenario '${scenarioName}' is not applicable at spec version ` +
+      `${specVersion} (${introduced}). Use --force to run it anyway.`
+  );
+  return true;
+}
+
+// When --spec-version is omitted, infer the version from the scenario's
+// declared source so draft-only scenarios get the draft (stateless) mock
+// server rather than the stateful latest-spec default.
+function resolveScenarioSpecVersion(
+  source: ScenarioSource,
+  specVersion: SpecVersion | undefined
+): SpecVersion {
+  return (
+    specVersion ??
+    ('introducedIn' in source && source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ? DRAFT_PROTOCOL_VERSION
+      : LATEST_SPEC_VERSION)
+  );
+}
+
 export async function runConformanceTest(
   clientCommand: string,
   scenarioName: string,
   timeout: number = 30000,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion,
+  force = false
 ): Promise<{
   checks: ConformanceCheck[];
-  clientOutput: ClientExecutionResult;
+  clientOutput?: ClientExecutionResult;
   resultDir?: string;
   allowClientError?: boolean;
+  skipped?: boolean;
 }> {
   let resultDir: string | undefined;
 
@@ -109,8 +170,24 @@ export async function runConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
+  if (
+    shouldSkipForSpecVersion(scenario.source, scenarioName, specVersion, force)
+  ) {
+    return { checks: [], resultDir, skipped: true };
+  }
+
+  const resolvedVersion = resolveScenarioSpecVersion(
+    scenario.source,
+    specVersion
+  );
+  const ctx: ScenarioContext = {
+    specVersion: resolvedVersion,
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
+  };
+
   console.error(`Starting scenario: ${scenarioName}`);
-  const urls = await scenario.start();
+  resetWireValidation();
+  const urls = await scenario.start(ctx);
 
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
   if (urls.context) {
@@ -123,7 +200,8 @@ export async function runConformanceTest(
       scenarioName,
       urls.serverUrl,
       timeout,
-      urls.context
+      urls.context,
+      resolvedVersion
     );
 
     // Print stdout/stderr if client exited with nonzero code
@@ -142,6 +220,7 @@ export async function runConformanceTest(
     }
 
     const checks = scenario.getChecks();
+    checks.push(...wireSchemaChecks(resolvedVersion));
 
     if (resultDir) {
       await fs.writeFile(
@@ -263,7 +342,9 @@ export function printClientResults(
 export async function runInteractiveMode(
   scenarioName: string,
   verbose: boolean = false,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion,
+  force = false
 ): Promise<void> {
   let resultDir: string | undefined;
 
@@ -275,8 +356,24 @@ export async function runInteractiveMode(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
+  if (
+    shouldSkipForSpecVersion(scenario.source, scenarioName, specVersion, force)
+  ) {
+    return;
+  }
+
+  const resolvedVersion = resolveScenarioSpecVersion(
+    scenario.source,
+    specVersion
+  );
+  const ctx: ScenarioContext = {
+    specVersion: resolvedVersion,
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
+  };
+
   console.log(`Starting scenario: ${scenarioName}`);
-  const urls = await scenario.start();
+  resetWireValidation();
+  const urls = await scenario.start(ctx);
 
   console.log(`Server URL: ${urls.serverUrl}`);
   console.log('Press Ctrl+C to stop...');
@@ -285,6 +382,7 @@ export async function runInteractiveMode(
     console.log('\nShutting down...');
 
     const checks = scenario.getChecks();
+    checks.push(...wireSchemaChecks(resolvedVersion));
 
     if (resultDir) {
       await fs.writeFile(

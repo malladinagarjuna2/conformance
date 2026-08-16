@@ -1,5 +1,6 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, SpecVersion } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -8,23 +9,31 @@ import { SpecReferences } from './spec-references';
 
 export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
   name = 'auth/2025-03-26-oauth-metadata-backcompat';
-  specVersions: SpecVersion[] = ['2025-03-26'];
+  readonly source = {
+    introducedIn: '2025-03-26',
+    removedIn: '2025-06-18'
+  } as const;
   description =
     'Tests 2025-03-26 spec OAuth flow: no PRM (Protected Resource Metadata), OAuth metadata at root location';
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     // Legacy server, so we create the auth server endpoints on the
     // same URL as the main server (rather than separating AS / RS).
-    const authApp = createAuthServer(this.checks, this.server.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
       loggingEnabled: false,
-      // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
-      routePrefix: '/oauth'
+      // Keep auth endpoints off the 2025-03-26 fallback paths so a client that
+      // fetches metadata but ignores the advertised endpoints still 404s.
+      routePrefix: '/oauth',
+      // Metadata is served at the root well-known path, so per RFC 8414 §3.3
+      // the `issuer` must be the bare origin — not `<origin>/oauth`.
+      metadataIssuer: () => this.server.getUrl()
     });
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.server.getUrl,
@@ -69,16 +78,20 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
 
 export class Auth20250326OEndpointFallbackScenario implements Scenario {
   name = 'auth/2025-03-26-oauth-endpoint-fallback';
-  specVersions: SpecVersion[] = ['2025-03-26'];
+  readonly source = {
+    introducedIn: '2025-03-26',
+    removedIn: '2025-06-18'
+  } as const;
   description =
     'Tests OAuth flow with no metadata endpoints, relying on fallback to standard OAuth endpoints at server root (2025-03-26 spec behavior)';
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.server.getUrl,

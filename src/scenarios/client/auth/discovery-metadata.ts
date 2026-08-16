@@ -6,6 +6,7 @@
  * generated from them.
  */
 
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -87,17 +88,17 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
   return {
     name: `auth/${config.name}`,
-    specVersions: ['2025-11-25'],
+    source: { introducedIn: '2025-11-25' },
     description: `Tests Basic OAuth metadata discovery flow.
 
 **PRM:** ${config.prmLocation}${config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}
 **OAuth metadata:** ${config.oauthMetadataLocation}
 `,
 
-    async start(): Promise<ScenarioUrls> {
+    async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
 
-      const authApp = createAuthServer(checks, authServer.getUrl, {
+      const authApp = createAuthServer(ctx, checks, authServer.getUrl, {
         metadataPath: config.oauthMetadataLocation,
         isOpenIdConfiguration,
         ...(routePrefix && { routePrefix })
@@ -131,7 +132,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
         ? () => `${authServer.getUrl()}${routePrefix}`
         : authServer.getUrl;
 
-      const app = createServer(checks, server.getUrl, getAuthServerUrl, {
+      const app = createServer(ctx, checks, server.getUrl, getAuthServerUrl, {
         prmPath: config.prmLocation,
         includePrmInWwwAuth: config.inWwwAuth
       });

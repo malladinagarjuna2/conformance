@@ -2,12 +2,16 @@
  * Prompts test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
-import { connectToServer } from './client-helper';
+import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
+import type {
+  ListPromptsResult,
+  GetPromptResult
+} from '../../spec-types/2025-06-18';
 
 export class PromptsListScenario implements ClientScenario {
   name = 'prompts-list';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test listing available prompts.
 
 **Server Implementation Requirements:**
@@ -21,13 +25,13 @@ export class PromptsListScenario implements ClientScenario {
   - \`description\` (string)
   - \`arguments\` (array, optional) - list of required arguments`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.listPrompts();
+      const result = await conn.request<ListPromptsResult>('prompts/list');
 
       // Validate response structure
       const errors: string[] = [];
@@ -64,7 +68,7 @@ export class PromptsListScenario implements ClientScenario {
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'prompts-list',
@@ -88,7 +92,7 @@ export class PromptsListScenario implements ClientScenario {
 
 export class PromptsGetSimpleScenario implements ClientScenario {
   name = 'prompts-get-simple';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test getting a simple prompt without arguments.
 
 **Server Implementation Requirements:**
@@ -109,13 +113,13 @@ Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.getPrompt({
+      const result = await conn.request<GetPromptResult>('prompts/get', {
         name: 'test_simple_prompt'
       });
 
@@ -149,7 +153,7 @@ Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'prompts-get-simple',
@@ -173,7 +177,7 @@ Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
 
 export class PromptsGetWithArgsScenario implements ClientScenario {
   name = 'prompts-get-with-args';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test parameterized prompt.
 
 **Server Implementation Requirements:**
@@ -198,13 +202,13 @@ Returns (with args \`{arg1: "hello", arg2: "world"}\`):
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.getPrompt({
+      const result = await conn.request<GetPromptResult>('prompts/get', {
         name: 'test_prompt_with_arguments',
         arguments: {
           arg1: 'testValue1',
@@ -245,7 +249,7 @@ Returns (with args \`{arg1: "hello", arg2: "world"}\`):
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'prompts-get-with-args',
@@ -269,7 +273,7 @@ Returns (with args \`{arg1: "hello", arg2: "world"}\`):
 
 export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
   name = 'prompts-get-embedded-resource';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test prompt with embedded resource content.
 
 **Server Implementation Requirements:**
@@ -304,13 +308,13 @@ Returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.getPrompt({
+      const result = await conn.request<GetPromptResult>('prompts/get', {
         name: 'test_prompt_with_embedded_resource',
         arguments: {
           resourceUri: 'test://example-resource'
@@ -351,7 +355,7 @@ Returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'prompts-get-embedded-resource',
@@ -375,7 +379,7 @@ Returns:
 
 export class PromptsGetWithImageScenario implements ClientScenario {
   name = 'prompts-get-with-image';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test prompt with image content.
 
 **Server Implementation Requirements:**
@@ -404,13 +408,13 @@ Implement a prompt named \`test_prompt_with_image\` with no arguments that retur
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.getPrompt({
+      const result = await conn.request<GetPromptResult>('prompts/get', {
         name: 'test_prompt_with_image'
       });
 
@@ -448,7 +452,7 @@ Implement a prompt named \`test_prompt_with_image\` with no arguments that retur
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'prompts-get-with-image',

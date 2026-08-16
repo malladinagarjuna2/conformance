@@ -1,5 +1,6 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls, SpecVersion } from '../../../types.js';
+import { ScenarioUrls } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
@@ -45,7 +46,7 @@ const AUTH_METHOD_NAMES: Record<AuthMethod, string> = {
 
 class TokenEndpointAuthScenario implements Scenario {
   name: string;
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description: string;
   private expectedAuthMethod: AuthMethod;
   private authServer = new ServerLifecycle();
@@ -62,13 +63,13 @@ class TokenEndpointAuthScenario implements Scenario {
     this.description = `Tests that client uses ${AUTH_METHOD_NAMES[expectedAuthMethod]} when server only supports ${expectedAuthMethod}`;
   }
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationResource = undefined;
     this.tokenResource = undefined;
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
       onAuthorizationRequest: ({ resource }) => {
@@ -137,6 +138,7 @@ class TokenEndpointAuthScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

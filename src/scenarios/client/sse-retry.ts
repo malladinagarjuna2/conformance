@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * SSE Retry conformance test scenarios for MCP clients (SEP-1699)
  *
@@ -12,12 +13,15 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
-  SpecVersion
+  DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
 
 export class SSERetryScenario implements Scenario {
   name = 'sse-retry';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  readonly source = {
+    introducedIn: '2025-11-25',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description =
     'Tests that client respects SSE retry field timing and reconnects properly (SEP-1699)';
 
@@ -43,7 +47,7 @@ export class SSERetryScenario implements Scenario {
   private readonly LATE_TOLERANCE = 200; // Allow 200ms late for network/event loop
   private readonly VERY_LATE_MULTIPLIER = 2; // If >2x retry value, client is likely ignoring it
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);

@@ -1,9 +1,5 @@
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
+import type { ScenarioContext } from '../../../mock-server';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -24,7 +20,7 @@ const PRE_REGISTERED_CLIENT_SECRET = 'pre-registered-secret';
  */
 export class PreRegistrationScenario implements Scenario {
   name = 'auth/pre-registration';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests OAuth flow with pre-registered client credentials. Server does not support DCR.';
 
@@ -32,11 +28,11 @@ export class PreRegistrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       disableDynamicRegistration: true,
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
@@ -110,6 +106,7 @@ export class PreRegistrationScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

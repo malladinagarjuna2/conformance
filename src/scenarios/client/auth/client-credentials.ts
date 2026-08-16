@@ -1,11 +1,7 @@
+import type { ScenarioContext } from '../../../mock-server';
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -37,7 +33,9 @@ async function generateTestKeypair(): Promise<{
  */
 export class ClientCredentialsJwtScenario implements Scenario {
   name = 'auth/client-credentials-jwt';
-  specVersions: SpecVersion[] = ['extension'];
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/oauth-client-credentials'
+  } as const;
   description =
     'Tests OAuth client_credentials flow with private_key_jwt authentication (SEP-1046)';
 
@@ -45,13 +43,13 @@ export class ClientCredentialsJwtScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate a fresh keypair for this test run
     const { publicKey, privateKeyPem } = await generateTestKeypair();
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['client_credentials'],
       tokenEndpointAuthMethodsSupported: ['private_key_jwt'],
       tokenEndpointAuthSigningAlgValuesSupported: ['ES256'],
@@ -204,6 +202,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl
@@ -256,7 +255,9 @@ export class ClientCredentialsJwtScenario implements Scenario {
  */
 export class ClientCredentialsBasicScenario implements Scenario {
   name = 'auth/client-credentials-basic';
-  specVersions: SpecVersion[] = ['extension'];
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/oauth-client-credentials'
+  } as const;
   description =
     'Tests OAuth client_credentials flow with client_secret_basic authentication';
 
@@ -264,10 +265,10 @@ export class ClientCredentialsBasicScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['client_credentials'],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       onTokenRequest: async ({
@@ -365,6 +366,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl

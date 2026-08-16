@@ -1,13 +1,10 @@
+import type { ScenarioContext } from '../../../mock-server';
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import express, { type Request, type Response } from 'express';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
+import { JWT_BEARER_GRANT_TYPE } from './helpers/createWorkloadJwt.js';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -53,16 +50,18 @@ async function createIdpIdToken(
 }
 
 /**
- * Scenario: Complete Cross-App Access Flow
+ * Scenario: Enterprise-Managed Authorization (SEP-990)
  *
  * Tests the complete SEP-990 flow: IDP ID token -> authorization grant -> access token
  * This scenario combines both RFC 8693 token exchange and RFC 7523 JWT bearer grant.
  */
-export class CrossAppAccessCompleteFlowScenario implements Scenario {
-  name = 'auth/cross-app-access-complete-flow';
-  specVersions: SpecVersion[] = ['extension'];
+export class EnterpriseManagedAuthorizationScenario implements Scenario {
+  name = 'auth/enterprise-managed-authorization';
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/enterprise-managed-authorization'
+  } as const;
   description =
-    'Tests complete SEP-990 flow: token exchange + JWT bearer grant (Enterprise Managed OAuth)';
+    'Tests complete SEP-990 flow: token exchange + JWT bearer grant (Enterprise-Managed Authorization)';
 
   private idpServer = new ServerLifecycle();
   private authServer = new ServerLifecycle();
@@ -72,7 +71,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
   private idpPrivateKey?: CryptoKey;
   private grantKeypairs: Map<string, CryptoKey> = new Map();
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate IDP keypair
@@ -89,8 +88,8 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
 
     // Start auth server with JWT bearer grant support only
     // Token exchange is handled by IdP
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
-      grantTypesSupported: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+      grantTypesSupported: [JWT_BEARER_GRANT_TYPE],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       tokenVerifier,
       onTokenRequest: async ({
@@ -101,7 +100,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         authorizationHeader
       }) => {
         // Auth server only handles JWT bearer grant (ID-JAG -> access token)
-        if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
+        if (grantType === JWT_BEARER_GRANT_TYPE) {
           const mcpResourceUrl = `${this.mcpServer.getUrl()}/mcp`;
           return await this.handleJwtBearerGrant(
             body,
@@ -123,6 +122,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
 
     // Start MCP server with shared token verifier
     const mcpApp = createServer(
+      ctx,
       this.checks,
       this.mcpServer.getUrl,
       this.authServer.getUrl,

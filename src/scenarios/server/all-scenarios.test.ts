@@ -1,14 +1,35 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
-import { getClientScenario, listActiveClientScenarios } from '../index';
+import { createServer } from 'net';
+import {
+  getClientScenario,
+  listActiveClientScenarios,
+  listDraftClientScenarios,
+  listPendingClientScenarios
+} from '../index';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 import path from 'path';
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, () => {
+      const port = (server.address() as { port: number }).port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
+}
 
 describe('Server Scenarios', () => {
   let serverProcess: ChildProcess | null = null;
-  const TEST_PORT = 3001;
-  const SERVER_URL = `http://localhost:${TEST_PORT}/mcp`;
+  let serverUrl: string;
   const SERVER_STARTUP_TIMEOUT = 30000; // 30 seconds for CI
 
   beforeAll(async () => {
+    const testPort = await getFreePort();
+    serverUrl = `http://localhost:${testPort}/mcp`;
+
     // Start the everything-server once for all scenarios in this file
     const serverPath = path.join(
       process.cwd(),
@@ -18,7 +39,7 @@ describe('Server Scenarios', () => {
     // Use shell: true on Windows only (npx is npx.cmd on Windows)
     const isWindows = process.platform === 'win32';
     serverProcess = spawn('npx', ['tsx', serverPath], {
-      env: { ...process.env, PORT: TEST_PORT.toString() },
+      env: { ...process.env, PORT: testPort.toString() },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       shell: isWindows
@@ -102,8 +123,14 @@ describe('Server Scenarios', () => {
     }
   });
 
-  // Generate individual test for each scenario
-  const scenarios = listActiveClientScenarios();
+  // Generate individual test for each scenario: the active suite plus the
+  // draft-spec scenarios that aren't parked in `pending` — the same set this
+  // file covered before draft scenarios were split out of `active`.
+  const pendingScenarios = new Set(listPendingClientScenarios());
+  const scenarios = [
+    ...listActiveClientScenarios(),
+    ...listDraftClientScenarios().filter((name) => !pendingScenarios.has(name))
+  ];
 
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {
@@ -114,7 +141,15 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario ${scenarioName} not found`);
       }
 
-      const checks = await scenario.run(SERVER_URL);
+      // Draft-only scenarios expect the draft (stateless) connection, so
+      // derive the spec version from the scenario's declared source.
+      const specVersion =
+        'introducedIn' in scenario.source &&
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+          ? DRAFT_PROTOCOL_VERSION
+          : LATEST_SPEC_VERSION;
+
+      const checks = await scenario.run(testContext(serverUrl, specVersion));
 
       // Verify checks were returned
       expect(checks.length).toBeGreaterThan(0);
